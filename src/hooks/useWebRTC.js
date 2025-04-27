@@ -306,7 +306,6 @@ import { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 
 const SIGNALING_SERVER_URL = 'wss://reactvideocallingapp1-backend-production.up.railway.app';
-
 const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 export default function useWebRTC(roomId) {
@@ -318,54 +317,44 @@ export default function useWebRTC(roomId) {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
 
-  const peerRef = useRef();
+  const peerRef = useRef(null);  // Ensure this is initialized to null
   const localStreamRef = useRef();
   const screenStreamRef = useRef();
-  const socketRef = useRef();
+
+  // Initialize socket connection
+  const socket = useRef(io(SIGNALING_SERVER_URL)); // This creates a socket connection
 
   useEffect(() => {
-    socketRef.current = io(SIGNALING_SERVER_URL); // Create socket connection
     const init = async () => {
-      // Get local media stream
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
-
-      // Display local video stream
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
 
-      // Join the room
-      socketRef.current.emit('join', roomId);
+      socket.current.emit('join', roomId);
 
-      // Event listeners
-      socketRef.current.on('ready', handleReady);
-      socketRef.current.on('offer', handleOffer);
-      socketRef.current.on('answer', handleAnswer);
-      socketRef.current.on('ice-candidate', handleNewICECandidate);
-      socketRef.current.on('leave', handleRemoteLeave);
-      socketRef.current.on('screen-sharing', handleScreenSharing);
+      socket.current.on('ready', handleReady);
+      socket.current.on('offer', handleOffer);
+      socket.current.on('answer', handleAnswer);
+      socket.current.on('ice-candidate', handleNewICECandidate);
+      socket.current.on('leave', handleRemoteLeave);
+      socket.current.on('screen-sharing', handleScreenSharing);
     };
 
     const handleReady = async () => {
-      createPeer(true); // Create peer for the initiator
-      addLocalTracks(); // Add local media tracks to the peer connection
+      createPeer(true);
+      addLocalTracks();
     };
 
     const handleOffer = async (offer) => {
-      // Check if peerRef is initialized before setting remote description
-      if (!peerRef.current) {
-        console.error('peerRef is not initialized');
-        return;
-      }
-    
+      if (!peerRef.current) return; // Prevent accessing peerRef if not initialized
       createPeer(false);
       await peerRef.current.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await peerRef.current.createAnswer();
       await peerRef.current.setLocalDescription(answer);
-      socket.emit('answer', { answer, roomId });
+      socket.current.emit('answer', { answer, roomId });
     };
-    
 
     const handleAnswer = async ({ answer }) => {
       if (peerRef.current) {
@@ -374,12 +363,8 @@ export default function useWebRTC(roomId) {
     };
 
     const handleNewICECandidate = async ({ candidate }) => {
-      try {
-        if (peerRef.current) {
-          await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-        }
-      } catch (err) {
-        console.error('Error adding received ice candidate', err);
+      if (peerRef.current) {
+        await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
       }
     };
 
@@ -394,40 +379,37 @@ export default function useWebRTC(roomId) {
     };
 
     const createPeer = (initiator) => {
-      // Ensure peerRef is initialized
-      if (peerRef.current) return; // If it's already initialized, return early
-    
-      peerRef.current = new RTCPeerConnection();
-    
+      if (peerRef.current) return;  // Avoid re-creating the peer connection
+
+      peerRef.current = new RTCPeerConnection(ICE_CONFIG);
+
       peerRef.current.onicecandidate = (e) => {
         if (e.candidate) {
-          socket.emit('ice-candidate', { candidate: e.candidate, roomId });
+          socket.current.emit('ice-candidate', { candidate: e.candidate, roomId });
         }
       };
-    
+
       peerRef.current.ontrack = (e) => {
         if (remoteVideoRef.current && e.streams[0]) {
           remoteVideoRef.current.srcObject = e.streams[0];
           setIsRemoteConnected(true);
         }
       };
-    
+
       peerRef.current.oniceconnectionstatechange = () => {
-        console.log('ICE state:', peerRef.current.iceConnectionState);
         if (peerRef.current.iceConnectionState === 'disconnected' || peerRef.current.iceConnectionState === 'failed') {
           cleanupPeer();
         }
       };
-    
+
       if (initiator) {
         peerRef.current.onnegotiationneeded = async () => {
           const offer = await peerRef.current.createOffer();
           await peerRef.current.setLocalDescription(offer);
-          socket.emit('offer', { offer, roomId });
+          socket.current.emit('offer', { offer, roomId });
         };
       }
     };
-    
 
     const addLocalTracks = () => {
       localStreamRef.current?.getTracks().forEach(track => {
@@ -438,20 +420,23 @@ export default function useWebRTC(roomId) {
     const cleanupPeer = () => {
       if (peerRef.current) {
         peerRef.current.close();
-        peerRef.current = null;  // This clears the peerRef
+        peerRef.current = null;  // Reset peerRef
       }
       setIsRemoteConnected(false);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = null;
       }
-    };    
+    };
 
-    // Cleanup on component unmount
+    // Create a local variable for socket to prevent ref changes during cleanup
+    const socketInstance = socket.current;
+
     init();
 
     return () => {
       cleanupPeer();
-      socketRef.current.disconnect();
+      // Use socketInstance in cleanup to avoid issues with socket.current being updated
+      socketInstance.disconnect();
       localStreamRef.current?.getTracks().forEach(track => track.stop());
       screenStreamRef.current?.getTracks().forEach(track => track.stop());
     };
@@ -469,7 +454,7 @@ export default function useWebRTC(roomId) {
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       screenStreamRef.current = screenStream;
-
+  
       const videoTrack = screenStream.getVideoTracks()[0];
       if (peerRef.current) {
         const sender = peerRef.current.getSenders().find(s => s.track.kind === 'video');
@@ -479,14 +464,14 @@ export default function useWebRTC(roomId) {
       } else {
         console.error('peerRef.current is not defined');
       }
-
-      socketRef.current.emit('screen-sharing', screenStream, roomId);
-
+  
+      socket.current.emit('screen-sharing', screenStream, roomId);
+  
       if (screenVideoRef.current) {
         screenVideoRef.current.srcObject = screenStream;
       }
       setIsScreenSharing(true);
-
+  
       videoTrack.onended = async () => {
         const originalTrack = localStreamRef.current.getVideoTracks()[0];
         if (peerRef.current) {
@@ -503,7 +488,7 @@ export default function useWebRTC(roomId) {
     } catch (err) {
       console.error('Screen share error:', err);
     }
-  };
+  };  
 
   return {
     localVideoRef,
