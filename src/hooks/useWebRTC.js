@@ -452,33 +452,37 @@ export default function useWebRTC(roomId) {
 
   const shareScreen = async () => {
     try {
+      // Ensure peerRef is initialized before attempting to share screen
+      if (!peerRef.current) {
+        console.error('Peer connection not established');
+        return;
+      }
+
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       screenStreamRef.current = screenStream;
-  
+
       const videoTrack = screenStream.getVideoTracks()[0];
-      if (peerRef.current) {
-        const sender = peerRef.current.getSenders().find(s => s.track.kind === 'video');
-        if (sender) {
-          sender.replaceTrack(videoTrack);
-        }
+      const sender = peerRef.current.getSenders().find(s => s.track.kind === 'video');
+      
+      if (sender) {
+        sender.replaceTrack(videoTrack);
       } else {
-        console.error('peerRef.current is not defined');
+        console.error('No video sender found');
+        return;
       }
-  
+
       socket.current.emit('screen-sharing', screenStream, roomId);
-  
+
       if (screenVideoRef.current) {
         screenVideoRef.current.srcObject = screenStream;
       }
       setIsScreenSharing(true);
-  
+
       videoTrack.onended = async () => {
         const originalTrack = localStreamRef.current.getVideoTracks()[0];
-        if (peerRef.current) {
-          const sender = peerRef.current.getSenders().find(s => s.track.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(originalTrack);
-          }
+        const sender = peerRef.current.getSenders().find(s => s.track.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(originalTrack);
         }
         if (screenVideoRef.current) {
           screenVideoRef.current.srcObject = null;
@@ -488,7 +492,7 @@ export default function useWebRTC(roomId) {
     } catch (err) {
       console.error('Screen share error:', err);
     }
-  };  
+  };
 
   return {
     localVideoRef,
