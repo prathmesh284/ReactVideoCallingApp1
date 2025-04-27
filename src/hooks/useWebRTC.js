@@ -353,12 +353,19 @@ export default function useWebRTC(roomId) {
     };
 
     const handleOffer = async (offer) => {
-      createPeer(false); // Create peer for the answerer
+      // Check if peerRef is initialized before setting remote description
+      if (!peerRef.current) {
+        console.error('peerRef is not initialized');
+        return;
+      }
+    
+      createPeer(false);
       await peerRef.current.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await peerRef.current.createAnswer();
       await peerRef.current.setLocalDescription(answer);
-      socketRef.current.emit('answer', { answer, roomId });
+      socket.emit('answer', { answer, roomId });
     };
+    
 
     const handleAnswer = async ({ answer }) => {
       if (peerRef.current) {
@@ -387,36 +394,40 @@ export default function useWebRTC(roomId) {
     };
 
     const createPeer = (initiator) => {
-      peerRef.current = new RTCPeerConnection(ICE_CONFIG);
-
+      // Ensure peerRef is initialized
+      if (peerRef.current) return; // If it's already initialized, return early
+    
+      peerRef.current = new RTCPeerConnection();
+    
       peerRef.current.onicecandidate = (e) => {
         if (e.candidate) {
-          socketRef.current.emit('ice-candidate', { candidate: e.candidate, roomId });
+          socket.emit('ice-candidate', { candidate: e.candidate, roomId });
         }
       };
-
+    
       peerRef.current.ontrack = (e) => {
         if (remoteVideoRef.current && e.streams[0]) {
           remoteVideoRef.current.srcObject = e.streams[0];
           setIsRemoteConnected(true);
         }
       };
-
+    
       peerRef.current.oniceconnectionstatechange = () => {
         console.log('ICE state:', peerRef.current.iceConnectionState);
         if (peerRef.current.iceConnectionState === 'disconnected' || peerRef.current.iceConnectionState === 'failed') {
           cleanupPeer();
         }
       };
-
+    
       if (initiator) {
         peerRef.current.onnegotiationneeded = async () => {
           const offer = await peerRef.current.createOffer();
           await peerRef.current.setLocalDescription(offer);
-          socketRef.current.emit('offer', { offer, roomId });
+          socket.emit('offer', { offer, roomId });
         };
       }
     };
+    
 
     const addLocalTracks = () => {
       localStreamRef.current?.getTracks().forEach(track => {
@@ -427,13 +438,13 @@ export default function useWebRTC(roomId) {
     const cleanupPeer = () => {
       if (peerRef.current) {
         peerRef.current.close();
-        peerRef.current = null;
+        peerRef.current = null;  // This clears the peerRef
       }
       setIsRemoteConnected(false);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = null;
       }
-    };
+    };    
 
     // Cleanup on component unmount
     init();
