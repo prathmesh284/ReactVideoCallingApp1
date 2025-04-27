@@ -390,11 +390,13 @@ export default function useWebRTC(roomId) {
       };
 
       peerRef.current.ontrack = (e) => {
+        console.log('Remote track received:', e.streams[0]);
         if (remoteVideoRef.current && e.streams[0]) {
           remoteVideoRef.current.srcObject = e.streams[0];
           setIsRemoteConnected(true);
         }
       };
+      
 
       peerRef.current.oniceconnectionstatechange = () => {
         if (peerRef.current.iceConnectionState === 'disconnected' || peerRef.current.iceConnectionState === 'failed') {
