@@ -305,7 +305,7 @@
 import { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 
-const SIGNALING_SERVER_URL = 'wss://reactvideocallingapp1-backend-production.up.railway.app';
+const SIGNALING_SERVER_URL = 'wss://reactvideocallingapp1-backend-production.up.railway.app/socket.io';
 const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 export default function useWebRTC(roomId) {
