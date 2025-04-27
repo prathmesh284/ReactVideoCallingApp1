@@ -323,69 +323,75 @@ export default function useWebRTC(roomId) {
 
   const [muted, setMuted] = useState(false);
 
-  useEffect(() => {
-    socketRef.current = io(SIGNALING_SERVER_URL, { transports: ['websocket'] }); // Force WebSocket for Railway stability
-    pcRef.current = new RTCPeerConnection(ICE_CONFIG);
+  // Updated socket events
+useEffect(() => {
+  socketRef.current = io(SIGNALING_SERVER_URL, { transports: ['websocket'] });
+  pcRef.current = new RTCPeerConnection(ICE_CONFIG);
 
-    const setupMedia = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-      stream.getTracks().forEach(track => pcRef.current.addTrack(track, stream));
-      socketRef.current.emit('join', roomId);
-    };
+  const setupMedia = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localStreamRef.current = stream;
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+    stream.getTracks().forEach(track => pcRef.current.addTrack(track, stream));
+    socketRef.current.emit('join', roomId);
+  };
 
-    setupMedia();
+  setupMedia();
 
-    socketRef.current.on('user-joined', async () => {
-      const offer = await pcRef.current.createOffer();
-      await pcRef.current.setLocalDescription(offer);
-      socketRef.current.emit('offer', { offer: pcRef.current.localDescription, room: roomId });
-    });
+  socketRef.current.on('other-user', async ({ otherUser }) => {
+    console.log('Other user detected, sending offer');
+    const offer = await pcRef.current.createOffer();
+    await pcRef.current.setLocalDescription(offer);
+    socketRef.current.emit('offer', { offer, to: otherUser, room: roomId });
+  });
 
-    socketRef.current.on('offer', async ({ offer }) => {
-      await pcRef.current.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pcRef.current.createAnswer();
-      await pcRef.current.setLocalDescription(answer);
-      socketRef.current.emit('answer', { answer: pcRef.current.localDescription, room: roomId });
-    });
+  socketRef.current.on('user-joined', ({ newUser }) => {
+    console.log('New user joined, waiting for offer...');
+  });
 
-    socketRef.current.on('answer', async ({ answer }) => {
-      await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-    });
+  socketRef.current.on('offer', async ({ offer, from }) => {
+    console.log('Offer received, sending answer');
+    await pcRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pcRef.current.createAnswer();
+    await pcRef.current.setLocalDescription(answer);
+    socketRef.current.emit('answer', { answer, to: from, room: roomId });
+  });
 
-    pcRef.current.onicecandidate = (event) => {
-      if (event.candidate) {
-        socketRef.current.emit('ice-candidate', { candidate: event.candidate, room: roomId });
-      }
-    };
+  socketRef.current.on('answer', async ({ answer, from }) => {
+    console.log('Answer received, setting remote description');
+    await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+  });
 
-    socketRef.current.on('ice-candidate', async ({ candidate }) => {
-      if (candidate) {
-        try {
-          await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (err) {
-          console.error('Error adding received ice candidate', err);
-        }
-      }
-    });
+  pcRef.current.onicecandidate = (event) => {
+    if (event.candidate) {
+      socketRef.current.emit('ice-candidate', { candidate: event.candidate, to: peerUserId });
+    }
+  };
 
-    pcRef.current.ontrack = (event) => {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
-      }
-    };
+  socketRef.current.on('ice-candidate', async ({ candidate }) => {
+    try {
+      await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.error('Error adding ice candidate', err);
+    }
+  });
 
-    return () => {
-      socketRef.current.disconnect();
-      if (pcRef.current) pcRef.current.close();
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [roomId]);
+  pcRef.current.ontrack = (event) => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = event.streams[0];
+    }
+  };
+
+  return () => {
+    socketRef.current.disconnect();
+    if (pcRef.current) pcRef.current.close();
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+  };
+}, [roomId]);
 
   const toggleAudio = () => {
     const audioTrack = localStreamRef.current?.getAudioTracks()[0];
