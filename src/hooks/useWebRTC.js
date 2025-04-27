@@ -197,7 +197,7 @@ import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
 // 👇 Replace with your Railway backend URL
-const socket = io('https://reactvideocallingapp1-production.up.railway.app'); 
+const socket = io('https://reactvideocallingapp1-backend-production.up.railway.app'); 
 
 export default function useWebRTC(roomId) {
   const localVideoRef = useRef();
