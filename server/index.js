@@ -1,36 +1,46 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const cors = require('cors');
+const cors = require('cors'); // Import the cors package
 
 const app = express();
-app.use(cors());
 const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: { origin: '*' }
-});
+const io = socketIo(server);
+
+const PORT = 5000;
+
+// Enable CORS for all domains, or specify localhost:3000 to restrict to your frontend
+app.use(cors({
+  origin: 'http://localhost:3000', // Allow only your frontend (localhost:3000) to connect
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
+}));
 
 io.on('connection', (socket) => {
+  console.log('a user connected');
+  
   socket.on('join', (roomId) => {
     socket.join(roomId);
-    socket.to(roomId).emit('user-joined', socket.id);
+    console.log(`User joined room: ${roomId}`);
   });
 
-  socket.on('offer', (data) => {
-    socket.to(data.room).emit('offer', data);
+  socket.on('offer', (offer, roomId) => {
+    socket.to(roomId).emit('offer', offer);
   });
 
-  socket.on('answer', (data) => {
-    socket.to(data.room).emit('answer', data);
+  socket.on('answer', (answer, roomId) => {
+    socket.to(roomId).emit('answer', answer);
   });
 
-  socket.on('ice-candidate', (data) => {
-    socket.to(data.room).emit('ice-candidate', data);
+  socket.on('ice-candidate', (candidate, roomId) => {
+    socket.to(roomId).emit('ice-candidate', candidate);
   });
 
   socket.on('disconnect', () => {
-    socket.broadcast.emit('user-disconnected', socket.id);
+    console.log('user disconnected');
   });
 });
 
-server.listen(5000, () => console.log('Signaling server running on port 5000'));
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});

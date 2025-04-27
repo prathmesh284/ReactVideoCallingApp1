@@ -39,14 +39,23 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useWebRTC from '../hooks/useWebRTC';
 import VideoPlayer from '../components/VideoPlayer';
-import { FaSlideshare,FaPhoneSlash,FaVolumeUp,FaVolumeMute } from 'react-icons/fa';
+import { FaSlideshare, FaPhoneSlash, FaVolumeUp, FaVolumeMute } from 'react-icons/fa';
 
 export default function Room() {
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const { localVideoRef, remoteVideoRef, toggleAudio, shareScreen, muted, screenVideoRef } = useWebRTC(roomId);
-  
-  // State for fullscreen toggle
+
+  const {
+    localVideoRef,
+    remoteVideoRef,
+    toggleAudio,
+    shareScreen,
+    muted,
+    screenVideoRef,
+    isScreenSharing,
+    isRemoteConnected,
+  } = useWebRTC(roomId);
+
   const [isScreenFull, setIsScreenFull] = useState(false);
 
   const toggleFullScreen = () => {
@@ -59,41 +68,37 @@ export default function Room() {
         <span className="text-2xl font-semibold">Room: {roomId}</span>
       </div>
 
-      {/* Video Player */}
-      <VideoPlayer 
+      <VideoPlayer
         localVideoRef={localVideoRef}
         remoteVideoRef={remoteVideoRef}
-        screenVideoRef={screenVideoRef} 
+        screenVideoRef={screenVideoRef}
         isScreenFull={isScreenFull}
         toggleFullScreen={toggleFullScreen}
+        isScreenSharing={isScreenSharing}
+        isRemoteConnected={isRemoteConnected}
       />
 
-      {/* Control Buttons - Fixed at the bottom center */}
-      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center gap-6 z-index-10">
-        <button 
-          onClick={toggleAudio} 
+      {/* Controls */}
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center gap-6 z-50">
+        <button
+          onClick={toggleAudio}
           className="px-6 py-3 bg-yellow-500 text-white font-semibold rounded-full shadow-lg hover:bg-yellow-600 transition-all duration-300"
         >
-          {muted ? <FaVolumeUp/> : <FaVolumeMute/>}
+          {muted ? <FaVolumeUp /> : <FaVolumeMute />}
         </button>
-        <button 
-          onClick={shareScreen} 
+        <button
+          onClick={shareScreen}
           className="px-6 py-3 bg-indigo-500 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-600 transition-all duration-300"
         >
-          <FaSlideshare/>
+          <FaSlideshare />
         </button>
-        <button 
-          onClick={() => navigate('/')} 
+        <button
+          onClick={() => navigate('/')}
           className="px-6 py-3 bg-red-600 text-white font-semibold rounded-full shadow-lg hover:bg-red-700 transition-all duration-300"
         >
-          <FaPhoneSlash/>
+          <FaPhoneSlash />
         </button>
       </div>
-
-      {/* Participants Label */}
-      {/* <div className="bg-black text-white text-center py-4 text-lg">
-        Participants: You & 1 peer
-      </div> */}
     </div>
   );
 }
