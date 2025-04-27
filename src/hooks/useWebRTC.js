@@ -305,7 +305,7 @@
 import { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 
-const SIGNALING_SERVER_URL = 'wss://your-backend-url.up.railway.app'; // Make sure to replace with your backend URL
+const SIGNALING_SERVER_URL = 'wss://reactvideocallingapp1-backend-production.up.railway.app'; // Make sure to replace with your backend URL
 
 const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
