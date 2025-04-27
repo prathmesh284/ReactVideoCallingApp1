@@ -305,96 +305,81 @@
 import { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 
-// 👉 Change this when you deploy the server to Railway
-const SIGNALING_SERVER_URL = 'reactvideocallingapp1-backend-production.up.railway.app'; 
+const SIGNALING_SERVER_URL = 'wss://your-backend-url.up.railway.app'; // Make sure to replace with your backend URL
 
-const ICE_CONFIG = { 
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] 
-};
+const ICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 export default function useWebRTC(roomId) {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  const screenVideoRef = useRef(null);
-
   const socketRef = useRef();
   const pcRef = useRef();
   const localStreamRef = useRef();
-
   const [muted, setMuted] = useState(false);
+  const screenVideoRef = useRef(null);
 
-  // Updated socket events
-useEffect(() => {
-  socketRef.current = io(SIGNALING_SERVER_URL, { transports: ['websocket'] });
-  pcRef.current = new RTCPeerConnection(ICE_CONFIG);
+  const peerUserId = useRef(null); // Define `peerUserId` here
 
-  const setupMedia = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    localStreamRef.current = stream;
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream;
-    }
-    stream.getTracks().forEach(track => pcRef.current.addTrack(track, stream));
-    socketRef.current.emit('join', roomId);
-  };
+  useEffect(() => {
+    socketRef.current = io(SIGNALING_SERVER_URL);
+    pcRef.current = new RTCPeerConnection(ICE_CONFIG);
 
-  setupMedia();
+    const setupMedia = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+      localStreamRef.current = stream;
+      stream.getTracks().forEach(track => pcRef.current.addTrack(track, stream));
+      socketRef.current.emit('join', roomId);
+    };
 
-  socketRef.current.on('other-user', async ({ otherUser }) => {
-    console.log('Other user detected, sending offer');
-    const offer = await pcRef.current.createOffer();
-    await pcRef.current.setLocalDescription(offer);
-    socketRef.current.emit('offer', { offer, to: otherUser, room: roomId });
-  });
+    setupMedia();
 
-  socketRef.current.on('user-joined', ({ newUser }) => {
-    console.log('New user joined, waiting for offer...');
-  });
+    socketRef.current.on('user-joined', async (data) => {
+      peerUserId.current = data.otherUser; // Store the peer's user ID here
+      const offer = await pcRef.current.createOffer();
+      await pcRef.current.setLocalDescription(offer);
+      socketRef.current.emit('offer', { offer, room: roomId, to: peerUserId.current });
+    });
 
-  socketRef.current.on('offer', async ({ offer, from }) => {
-    console.log('Offer received, sending answer');
-    await pcRef.current.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await pcRef.current.createAnswer();
-    await pcRef.current.setLocalDescription(answer);
-    socketRef.current.emit('answer', { answer, to: from, room: roomId });
-  });
+    socketRef.current.on('offer', async ({ offer, from }) => {
+      peerUserId.current = from; // Store the peer's user ID here
+      await pcRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pcRef.current.createAnswer();
+      await pcRef.current.setLocalDescription(answer);
+      socketRef.current.emit('answer', { answer, room: roomId, to: peerUserId.current });
+    });
 
-  socketRef.current.on('answer', async ({ answer, from }) => {
-    console.log('Answer received, setting remote description');
-    await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-  });
+    socketRef.current.on('answer', async ({ answer }) => {
+      await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+    });
 
-  pcRef.current.onicecandidate = (event) => {
-    if (event.candidate) {
-      socketRef.current.emit('ice-candidate', { candidate: event.candidate, to: peerUserId });
-    }
-  };
+    pcRef.current.onicecandidate = (event) => {
+      if (event.candidate) {
+        socketRef.current.emit('ice-candidate', { candidate: event.candidate, room: roomId, to: peerUserId.current });
+      }
+    };
 
-  socketRef.current.on('ice-candidate', async ({ candidate }) => {
-    try {
-      await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (err) {
-      console.error('Error adding ice candidate', err);
-    }
-  });
+    socketRef.current.on('ice-candidate', ({ candidate }) => {
+      pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+    });
 
-  pcRef.current.ontrack = (event) => {
-    if (remoteVideoRef.current) {
+    pcRef.current.ontrack = (event) => {
       remoteVideoRef.current.srcObject = event.streams[0];
-    }
-  };
+    };
 
-  return () => {
-    socketRef.current.disconnect();
-    if (pcRef.current) pcRef.current.close();
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-    }
-  };
-}, [roomId]);
+    return () => {
+      socketRef.current.disconnect();
+      pcRef.current.close();
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [roomId]);
 
   const toggleAudio = () => {
-    const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+    const audioTrack = localStreamRef.current.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       setMuted(!audioTrack.enabled);
@@ -406,26 +391,25 @@ useEffect(() => {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const screenTrack = screenStream.getTracks()[0];
       const sender = pcRef.current.getSenders().find(s => s.track.kind === 'video');
-
+  
       if (sender) {
         sender.replaceTrack(screenTrack);
       }
-
+  
       if (screenVideoRef.current) {
         screenVideoRef.current.srcObject = screenStream;
       }
-
+  
+      // When user stops sharing screen
       screenTrack.onended = () => {
         const videoTrack = localStreamRef.current.getVideoTracks()[0];
-        if (sender) {
-          sender.replaceTrack(videoTrack);
-        }
+        sender.replaceTrack(videoTrack);
         if (screenVideoRef.current) {
           screenVideoRef.current.srcObject = null;
         }
       };
     } catch (err) {
-      console.error('Error sharing screen:', err);
+      console.error('Error sharing screen: ', err);
     }
   };
 
