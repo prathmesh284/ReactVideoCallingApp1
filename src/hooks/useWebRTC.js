@@ -559,7 +559,7 @@ export default function useWebRTC(roomId) {
       socketRef.current.disconnect();
       if (peerRef.current) peerRef.current.close();
     };
-  }, [roomId]);
+  }, [roomId,callUser]);
 
   function callUser(userId) {
     peerRef.current = createPeer(userId);
