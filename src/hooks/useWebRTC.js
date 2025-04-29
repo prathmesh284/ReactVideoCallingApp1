@@ -19,6 +19,8 @@ export default function useWebRTC(roomId) {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
 
+  const hasJoinedRoom = useRef(false);
+
   const initializePeer = useCallback(() => {
     const peer = new RTCPeerConnection(ICE_SERVERS);
 
@@ -112,10 +114,13 @@ export default function useWebRTC(roomId) {
           localVideoRef.current.srcObject = stream;
         }
 
-        console.log("📡 Emitted join-room for:", roomId);
-        socketRef.current.emit('join-room', { roomId });
+        if (!hasJoinedRoom.current) {
+          console.log("📡 Emitted join-room for:", roomId);
+          socketRef.current.emit('join-room', { roomId });
+          hasJoinedRoom.current = true;
+        }
 
-        socketRef.current.on('user-joined', (socketId) => {
+        const handleUserJoined = (socketId) => {
           console.log("✅ Another user joined, socket:", socketId);
           setRemoteSocketId(socketId);
 
@@ -132,9 +137,9 @@ export default function useWebRTC(roomId) {
                 });
               });
           }
-        });
+        };
 
-        socketRef.current.on('receive-offer', async ({ offer, from }) => {
+        const handleReceiveOffer = async ({ offer, from }) => {
           console.log("📨 Received offer from", from);
           setRemoteSocketId(from);
           peerRef.current = initializePeer();
@@ -149,16 +154,16 @@ export default function useWebRTC(roomId) {
             answer: peerRef.current.localDescription,
             to: from,
           });
-        });
+        };
 
-        socketRef.current.on('receive-answer', async ({ answer }) => {
+        const handleReceiveAnswer = async ({ answer }) => {
           console.log("📨 Received answer");
           if (peerRef.current) {
             await peerRef.current.setRemoteDescription(new RTCSessionDescription(answer));
           }
-        });
+        };
 
-        socketRef.current.on('receive-ice-candidate', async ({ candidate }) => {
+        const handleReceiveIceCandidate = async ({ candidate }) => {
           console.log("🧊 Received ICE candidate");
           if (peerRef.current && candidate) {
             try {
@@ -167,9 +172,9 @@ export default function useWebRTC(roomId) {
               console.error('Error adding ICE candidate:', err);
             }
           }
-        });
+        };
 
-        socketRef.current.on('user-left', () => {
+        const handleUserLeft = () => {
           console.log("🏃‍♂️ User left");
           if (peerRef.current) {
             peerRef.current.close();
@@ -182,7 +187,13 @@ export default function useWebRTC(roomId) {
             screenStreamRef.current.getTracks().forEach(track => track.stop());
             screenStreamRef.current = null;
           }
-        });
+        };
+
+        socketRef.current.on('user-joined', handleUserJoined);
+        socketRef.current.on('receive-offer', handleReceiveOffer);
+        socketRef.current.on('receive-answer', handleReceiveAnswer);
+        socketRef.current.on('receive-ice-candidate', handleReceiveIceCandidate);
+        socketRef.current.on('user-left', handleUserLeft);
 
       } catch (err) {
         console.error('WebRTC init failed:', err);
@@ -192,10 +203,30 @@ export default function useWebRTC(roomId) {
     start();
 
     return () => {
-      socketRef.current?.disconnect();
-      if (peerRef.current) peerRef.current.close();
-      localStreamRef.current?.getTracks().forEach(t => t.stop());
-      screenStreamRef.current?.getTracks().forEach(t => t.stop());
+      if (socketRef.current) {
+        socketRef.current.off('user-joined');
+        socketRef.current.off('receive-offer');
+        socketRef.current.off('receive-answer');
+        socketRef.current.off('receive-ice-candidate');
+        socketRef.current.off('user-left');
+        socketRef.current.disconnect();
+      }
+
+      if (peerRef.current) {
+        peerRef.current.close();
+        peerRef.current = null;
+      }
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(t => t.stop());
+        localStreamRef.current = null;
+      }
+
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(t => t.stop());
+        screenStreamRef.current = null;
+      }
+
       if (remoteVideo) remoteVideo.srcObject = null;
       if (screenVideo) screenVideo.srcObject = null;
     };
