@@ -14,26 +14,26 @@ export default function useWebRTC(roomId) {
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
 
-  const [remoteSocketId, setRemoteSocketId] = useState(null);
   const [muted, setMuted] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
 
   const hasJoinedRoom = useRef(false);
 
-  const initializePeer = useCallback(() => {
+  const initializePeer = useCallback((targetSocketId) => {
     const peer = new RTCPeerConnection(ICE_SERVERS);
 
     peer.onicecandidate = (event) => {
-      if (event.candidate && remoteSocketId) {
+      if (event.candidate && targetSocketId) {
         socketRef.current.emit('send-ice-candidate', {
           candidate: event.candidate,
-          to: remoteSocketId,
+          to: targetSocketId,
         });
       }
     };
 
     peer.ontrack = (event) => {
+      console.log('🎥 ontrack:', event.streams);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
         setIsRemoteConnected(true);
@@ -42,10 +42,9 @@ export default function useWebRTC(roomId) {
 
     peer.oniceconnectionstatechange = () => {
       if (['disconnected', 'failed'].includes(peer.iceConnectionState)) {
-        if (peerRef.current) peerRef.current.close();
+        peer.close();
         peerRef.current = null;
         setIsRemoteConnected(false);
-
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
         if (screenStreamRef.current) {
           screenStreamRef.current.getTracks().forEach(track => track.stop());
@@ -55,7 +54,7 @@ export default function useWebRTC(roomId) {
     };
 
     return peer;
-  }, [remoteSocketId]);
+  }, []);
 
   const toggleAudio = useCallback(() => {
     const audioTrack = localStreamRef.current?.getAudioTracks()[0];
@@ -120,16 +119,12 @@ export default function useWebRTC(roomId) {
           hasJoinedRoom.current = true;
         }
 
-        const handleUserJoined = ({ socketId, shouldCreateOffer }) => {
-          console.log("✅ Another user joined:", socketId, "→ Should create offer?", shouldCreateOffer);
-          setRemoteSocketId(socketId);
-        
+        const handleUserJoined = (socketId) => {
+          console.log("✅ Another user joined:", socketId);
           if (!peerRef.current) {
-            peerRef.current = initializePeer();
+            peerRef.current = initializePeer(socketId);
             stream.getTracks().forEach(track => peerRef.current.addTrack(track, stream));
-          }
-        
-          if (shouldCreateOffer) {
+
             peerRef.current.createOffer()
               .then(offer => peerRef.current.setLocalDescription(offer))
               .then(() => {
@@ -143,9 +138,7 @@ export default function useWebRTC(roomId) {
 
         const handleReceiveOffer = async ({ offer, from }) => {
           console.log("📨 Received offer from", from);
-          setRemoteSocketId(from);
-          peerRef.current = initializePeer();
-
+          peerRef.current = initializePeer(from);
           stream.getTracks().forEach(track => peerRef.current.addTrack(track, stream));
 
           await peerRef.current.setRemoteDescription(new RTCSessionDescription(offer));
@@ -206,12 +199,8 @@ export default function useWebRTC(roomId) {
 
     return () => {
       if (socketRef.current) {
-        socketRef.current.off('user-joined');
-        socketRef.current.off('receive-offer');
-        socketRef.current.off('receive-answer');
-        socketRef.current.off('receive-ice-candidate');
-        socketRef.current.off('user-left');
         socketRef.current.disconnect();
+        socketRef.current = null;
       }
 
       if (peerRef.current) {
