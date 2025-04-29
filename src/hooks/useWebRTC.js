@@ -112,8 +112,10 @@ export default function useWebRTC(roomId) {
         }
 
         socketRef.current.emit('join-room', roomId);
+        console.log('📡 Emitted join-room for:', roomId);
 
         socketRef.current.on('user-joined', (socketId) => {
+          console.log('✅ user-joined:', socketId);
           setRemoteSocketId(socketId);
           peerRef.current = initializePeer();
 
@@ -130,6 +132,7 @@ export default function useWebRTC(roomId) {
         });
 
         socketRef.current.on('receive-offer', async ({ offer, from }) => {
+          console.log('📨 receive-offer from:', from);
           setRemoteSocketId(from);
           peerRef.current = initializePeer();
 
@@ -146,12 +149,14 @@ export default function useWebRTC(roomId) {
         });
 
         socketRef.current.on('receive-answer', async ({ answer }) => {
+          console.log('📨 receive-answer:', answer);
           if (peerRef.current) {
             await peerRef.current.setRemoteDescription(new RTCSessionDescription(answer));
           }
         });
 
         socketRef.current.on('receive-ice-candidate', async ({ candidate }) => {
+          console.log('🧊 receive-ice-candidate:', candidate);
           if (peerRef.current && candidate) {
             try {
               await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
@@ -162,6 +167,7 @@ export default function useWebRTC(roomId) {
         });
 
         socketRef.current.on('user-left', () => {
+          console.log('👋 user-left');
           if (peerRef.current) {
             peerRef.current.close();
             peerRef.current = null;
