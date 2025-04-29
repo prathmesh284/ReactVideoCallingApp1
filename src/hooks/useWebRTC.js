@@ -24,6 +24,7 @@ export default function useWebRTC(roomId) {
 
     peer.onicecandidate = (event) => {
       if (event.candidate && remoteSocketId) {
+        console.log('📤 Sending ICE candidate:', event.candidate);
         socketRef.current.emit('send-ice-candidate', {
           candidate: event.candidate,
           to: remoteSocketId,
@@ -32,6 +33,7 @@ export default function useWebRTC(roomId) {
     };
 
     peer.ontrack = (event) => {
+      console.log('🎥 Received remote track:', event.streams[0]);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
         setIsRemoteConnected(true);
@@ -39,6 +41,7 @@ export default function useWebRTC(roomId) {
     };
 
     peer.oniceconnectionstatechange = () => {
+      console.log('🔄 ICE Connection State:', peer.iceConnectionState);
       if (['disconnected', 'failed'].includes(peer.iceConnectionState)) {
         if (peerRef.current) peerRef.current.close();
         peerRef.current = null;
@@ -114,23 +117,25 @@ export default function useWebRTC(roomId) {
         socketRef.current.emit('join-room', roomId);
         console.log('📡 Emitted join-room for:', roomId);
 
-        socketRef.current.on('user-joined', (socketId) => {
-          console.log('✅ user-joined:', socketId);
-          setRemoteSocketId(socketId);
+        socketRef.current.on('user-joined', (remoteSocketId) => {
+          console.log('✅ Another user joined, socket:', remoteSocketId);
+          setRemoteSocketId(remoteSocketId);
           peerRef.current = initializePeer();
-
-          stream.getTracks().forEach(track => peerRef.current.addTrack(track, stream));
-
+        
+          stream.getTracks().forEach(track => {
+            peerRef.current.addTrack(track, stream);
+          });
+        
           peerRef.current.createOffer()
             .then(offer => peerRef.current.setLocalDescription(offer))
             .then(() => {
               socketRef.current.emit('send-offer', {
                 offer: peerRef.current.localDescription,
-                to: socketId,
+                to: remoteSocketId,
               });
             });
         });
-
+        
         socketRef.current.on('receive-offer', async ({ offer, from }) => {
           console.log('📨 receive-offer from:', from);
           setRemoteSocketId(from);
@@ -139,8 +144,13 @@ export default function useWebRTC(roomId) {
           stream.getTracks().forEach(track => peerRef.current.addTrack(track, stream));
 
           await peerRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+          console.log('📥 Set Remote Description (Offer):', offer);
+
           const answer = await peerRef.current.createAnswer();
+          console.log('📝 Created Answer:', answer);
+
           await peerRef.current.setLocalDescription(answer);
+          console.log('📡 Emitting Answer to:', from);
 
           socketRef.current.emit('send-answer', {
             answer: peerRef.current.localDescription,
