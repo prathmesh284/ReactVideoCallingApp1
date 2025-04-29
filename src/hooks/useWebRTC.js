@@ -24,7 +24,6 @@ export default function useWebRTC(roomId) {
 
     peer.onicecandidate = (event) => {
       if (event.candidate && remoteSocketId) {
-        console.log('📤 Sending ICE candidate:', event.candidate);
         socketRef.current.emit('send-ice-candidate', {
           candidate: event.candidate,
           to: remoteSocketId,
@@ -33,7 +32,6 @@ export default function useWebRTC(roomId) {
     };
 
     peer.ontrack = (event) => {
-      console.log('🎥 Received remote track:', event.streams[0]);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
         setIsRemoteConnected(true);
@@ -41,7 +39,6 @@ export default function useWebRTC(roomId) {
     };
 
     peer.oniceconnectionstatechange = () => {
-      console.log('🔄 ICE Connection State:', peer.iceConnectionState);
       if (['disconnected', 'failed'].includes(peer.iceConnectionState)) {
         if (peerRef.current) peerRef.current.close();
         peerRef.current = null;
@@ -78,6 +75,7 @@ export default function useWebRTC(roomId) {
       if (sender) {
         sender.replaceTrack(screenTrack);
       }
+
       if (screenVideoRef.current) {
         screenVideoRef.current.srcObject = screenStream;
       }
@@ -114,43 +112,38 @@ export default function useWebRTC(roomId) {
           localVideoRef.current.srcObject = stream;
         }
 
-        socketRef.current.emit('join-room', roomId);
-        console.log('📡 Emitted join-room for:', roomId);
+        console.log("📡 Emitted join-room for:", roomId);
+        socketRef.current.emit('join-room', { roomId });
 
-        socketRef.current.on('user-joined', (remoteSocketId) => {
-          console.log('✅ Another user joined, socket:', remoteSocketId);
-          setRemoteSocketId(remoteSocketId);
-          peerRef.current = initializePeer();
-        
-          stream.getTracks().forEach(track => {
-            peerRef.current.addTrack(track, stream);
-          });
-        
-          peerRef.current.createOffer()
-            .then(offer => peerRef.current.setLocalDescription(offer))
-            .then(() => {
-              socketRef.current.emit('send-offer', {
-                offer: peerRef.current.localDescription,
-                to: remoteSocketId,
+        socketRef.current.on('user-joined', (socketId) => {
+          console.log("✅ Another user joined, socket:", socketId);
+          setRemoteSocketId(socketId);
+
+          if (!peerRef.current) {
+            peerRef.current = initializePeer();
+            stream.getTracks().forEach(track => peerRef.current.addTrack(track, stream));
+
+            peerRef.current.createOffer()
+              .then(offer => peerRef.current.setLocalDescription(offer))
+              .then(() => {
+                socketRef.current.emit('send-offer', {
+                  offer: peerRef.current.localDescription,
+                  to: socketId,
+                });
               });
-            });
+          }
         });
-        
+
         socketRef.current.on('receive-offer', async ({ offer, from }) => {
-          console.log('📨 receive-offer from:', from);
+          console.log("📨 Received offer from", from);
           setRemoteSocketId(from);
           peerRef.current = initializePeer();
 
           stream.getTracks().forEach(track => peerRef.current.addTrack(track, stream));
 
           await peerRef.current.setRemoteDescription(new RTCSessionDescription(offer));
-          console.log('📥 Set Remote Description (Offer):', offer);
-
           const answer = await peerRef.current.createAnswer();
-          console.log('📝 Created Answer:', answer);
-
           await peerRef.current.setLocalDescription(answer);
-          console.log('📡 Emitting Answer to:', from);
 
           socketRef.current.emit('send-answer', {
             answer: peerRef.current.localDescription,
@@ -159,25 +152,25 @@ export default function useWebRTC(roomId) {
         });
 
         socketRef.current.on('receive-answer', async ({ answer }) => {
-          console.log('📨 receive-answer:', answer);
+          console.log("📨 Received answer");
           if (peerRef.current) {
             await peerRef.current.setRemoteDescription(new RTCSessionDescription(answer));
           }
         });
 
         socketRef.current.on('receive-ice-candidate', async ({ candidate }) => {
-          console.log('🧊 receive-ice-candidate:', candidate);
+          console.log("🧊 Received ICE candidate");
           if (peerRef.current && candidate) {
             try {
               await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
             } catch (err) {
-              console.error('Error adding received ICE candidate:', err);
+              console.error('Error adding ICE candidate:', err);
             }
           }
         });
 
         socketRef.current.on('user-left', () => {
-          console.log('👋 user-left');
+          console.log("🏃‍♂️ User left");
           if (peerRef.current) {
             peerRef.current.close();
             peerRef.current = null;
@@ -192,28 +185,17 @@ export default function useWebRTC(roomId) {
         });
 
       } catch (err) {
-        console.error('WebRTC initialization failed:', err);
+        console.error('WebRTC init failed:', err);
       }
     };
 
     start();
 
     return () => {
-      if (peerRef.current) {
-        peerRef.current.close();
-        peerRef.current = null;
-      }
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach(track => track.stop());
-        screenStreamRef.current = null;
-      }
+      socketRef.current?.disconnect();
+      if (peerRef.current) peerRef.current.close();
+      localStreamRef.current?.getTracks().forEach(t => t.stop());
+      screenStreamRef.current?.getTracks().forEach(t => t.stop());
       if (remoteVideo) remoteVideo.srcObject = null;
       if (screenVideo) screenVideo.srcObject = null;
     };
