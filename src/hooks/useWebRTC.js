@@ -120,14 +120,16 @@ export default function useWebRTC(roomId) {
           hasJoinedRoom.current = true;
         }
 
-        const handleUserJoined = (socketId) => {
-          console.log("✅ Another user joined, socket:", socketId);
+        const handleUserJoined = ({ socketId, shouldCreateOffer }) => {
+          console.log("✅ Another user joined:", socketId, "→ Should create offer?", shouldCreateOffer);
           setRemoteSocketId(socketId);
-
+        
           if (!peerRef.current) {
             peerRef.current = initializePeer();
             stream.getTracks().forEach(track => peerRef.current.addTrack(track, stream));
-
+          }
+        
+          if (shouldCreateOffer) {
             peerRef.current.createOffer()
               .then(offer => peerRef.current.setLocalDescription(offer))
               .then(() => {
