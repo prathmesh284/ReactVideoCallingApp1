@@ -1,5 +1,5 @@
 import React from 'react';
-import clsx from 'clsx'; // Make sure to install classnames or use your own helper
+import clsx from 'clsx';
 
 export default function VideoPlayer({
   localVideoRef,
