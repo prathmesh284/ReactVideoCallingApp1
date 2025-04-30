@@ -123,8 +123,9 @@ export default function useWebRTC(roomId) {
           console.log("✅ Another user joined:", socketId);
           if (!peerRef.current) {
             peerRef.current = initializePeer(socketId);
-            stream.getTracks().forEach(track => peerRef.current.addTrack(track, stream));
-
+            localStreamRef.current.getTracks().forEach(track => peerRef.current.addTrack(track, localStreamRef.current));
+        
+            // This user creates the offer (always the second to join)
             peerRef.current.createOffer()
               .then(offer => peerRef.current.setLocalDescription(offer))
               .then(() => {
@@ -134,7 +135,7 @@ export default function useWebRTC(roomId) {
                 });
               });
           }
-        };
+        };        
 
         const handleReceiveOffer = async ({ offer, from }) => {
           console.log("📨 Received offer from", from);
