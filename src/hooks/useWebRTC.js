@@ -13,11 +13,22 @@ export default function useWebRTC(roomId) {
   const peerRef = useRef(null);
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
-  const isOfferCreatedRef = useRef(false); // Prevent loops
+  const isOfferCreatedRef = useRef(false);
 
   const [muted, setMuted] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
+
+  const cleanupPeer = useCallback(() => {
+    console.log('[WebRTC] Cleaning up peer');
+    if (peerRef.current) {
+      peerRef.current.close();
+      peerRef.current = null;
+    }
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    isOfferCreatedRef.current = false;
+    setIsRemoteConnected(false);
+  }, []);
 
   const createPeerConnection = useCallback((targetSocketId) => {
     const peer = new RTCPeerConnection(ICE_SERVERS);
@@ -50,18 +61,7 @@ export default function useWebRTC(roomId) {
     };
 
     return peer;
-  }, []);
-
-  const cleanupPeer = useCallback(() => {
-    console.log('[WebRTC] Cleaning up peer');
-    if (peerRef.current) {
-      peerRef.current.close();
-      peerRef.current = null;
-    }
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-    isOfferCreatedRef.current = false;
-    setIsRemoteConnected(false);
-  }, []);
+  }, [cleanupPeer]);
 
   const toggleAudio = useCallback(() => {
     const audioTrack = localStreamRef.current?.getAudioTracks()[0];
@@ -94,7 +94,7 @@ export default function useWebRTC(roomId) {
     } catch (err) {
       console.error('[WebRTC] Error sharing screen:', err);
     }
-  }, []);
+  }, [setIsScreenSharing]);
 
   useEffect(() => {
     const start = async () => {
